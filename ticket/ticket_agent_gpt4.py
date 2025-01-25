@@ -1,0 +1,140 @@
+import os
+from typing import Dict, Any
+from dotenv import load_dotenv
+from langchain.agents import Tool, AgentExecutor
+from langchain.agents.format_scratchpad import format_log_to_str
+from langchain.agents.output_parsers import ReActSingleInputOutputParser
+from langchain_openai import ChatOpenAI
+from langchain.tools.render import render_text_description
+from langchain.prompts import PromptTemplate
+from ticket_data import concert_tickets
+
+# Load environment variables
+load_dotenv()
+
+# Configure OpenAI
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+def search_tickets(query: str) -> str:
+    """Search available tickets based on the query"""
+    events = concert_tickets["events"]
+    return str(events)
+
+def get_ticket_details(event_id: str) -> str:
+    """Get detailed information about specific tickets"""
+    for event in concert_tickets["events"]:
+        if event["id"] == event_id:
+            return str(event)
+    return "Event not found"
+
+def process_purchase(ticket_info: Dict[str, Any]) -> str:
+    """Process the ticket purchase by calling the transaction module"""
+    try:
+        # Import the transaction module dynamically
+        import sys
+        sys.path.append('../transaction')
+        from process_transaction import process_payment
+        
+        # Call the process_payment function
+        result = process_payment(ticket_info)
+        return f"Purchase processed successfully: {result}"
+    except Exception as e:
+        return f"Error processing purchase: {str(e)}"
+
+# Define tools for the agent
+tools = [
+    Tool(
+        name="SearchTickets",
+        func=search_tickets,
+        description="Search for available concert tickets. Input should be a string with search criteria."
+    ),
+    Tool(
+        name="GetTicketDetails",
+        func=get_ticket_details,
+        description="Get detailed information about specific tickets. Input should be the event ID."
+    ),
+    Tool(
+        name="ProcessPurchase",
+        func=process_purchase,
+        description="Process the ticket purchase. Input should be a dictionary with ticket details."
+    )
+]
+
+# Create the GPT-4 agent
+llm = ChatOpenAI(
+    model="gpt-4",
+    temperature=0.7,
+    api_key=OPENAI_API_KEY
+)
+
+# Define the agent prompt
+template = """You are a helpful concert ticket booking assistant. You can help users find and purchase concert tickets.
+You have access to the following tools:
+
+{tools}
+
+Use these tools to help the user find and purchase tickets.
+Always be polite and professional.
+Make sure to get all necessary information before processing a purchase.
+
+When you want to take an action:
+1. First think about what tool would be most appropriate
+2. Then use the tool in this format:
+Action: <tool_name>
+Action Input: <input>
+
+{chat_history}
+Question: {input}
+{agent_scratchpad}
+
+Let's approach this step by step:
+1) First, I'll think about what the user is asking for
+2) Then, I'll choose the appropriate tool to help
+3) Finally, I'll provide a helpful response
+
+"""
+
+prompt = PromptTemplate.from_template(template)
+
+# Create the agent
+agent = (
+    {
+        "input": lambda x: x["input"],
+        "chat_history": lambda x: x.get("chat_history", ""),
+        "agent_scratchpad": lambda x: format_log_to_str(x["intermediate_steps"]),
+        "tools": lambda x: render_text_description(tools),
+    }
+    | prompt
+    | llm
+    | ReActSingleInputOutputParser()
+)
+
+# Create the agent executor
+agent_executor = AgentExecutor(
+    agent=agent,
+    tools=tools,
+    verbose=True,
+    handle_parsing_errors=True,
+    max_iterations=3
+)
+
+def chat_with_agent(user_input: str) -> str:
+    """Function to interact with the agent"""
+    try:
+        response = agent_executor.invoke({"input": user_input})
+        return response["output"]
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+if __name__ == "__main__":
+    print("Welcome to the Concert Ticket Booking System!")
+    print("You can ask about available tickets, get details, or make a purchase.")
+    print("Type 'quit' to exit.")
+    
+    while True:
+        user_input = input("\nYou: ")
+        if user_input.lower() == 'quit':
+            break
+            
+        response = chat_with_agent(user_input)
+        print(f"\nAssistant: {response}")
