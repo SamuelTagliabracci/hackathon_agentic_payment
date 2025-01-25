@@ -7,6 +7,8 @@ from langchain.agents.output_parsers import ReActSingleInputOutputParser
 from langchain_openai import ChatOpenAI
 from langchain.tools.render import render_text_description
 from langchain.prompts import PromptTemplate
+from langchain.schema import AgentAction, AgentFinish
+import re
 from ticket_data import concert_tickets
 import json
 from datetime import datetime
@@ -145,6 +147,18 @@ Follow these guidelines:
    - Handle errors gracefully
    - Maintain context of the conversation
 
+IMPORTANT: You must ALWAYS respond in this format:
+Thought: First, I'll think about what the user is asking for and what tool would be most appropriate
+Action: <tool_name>
+Action Input: <input>
+Observation: <result>
+Thought: I'll analyze the result and decide if I need more information
+Action: <tool_name>
+Action Input: <input>
+Observation: <result>
+Thought: Now I can provide a helpful response to the user
+Final Answer: <your response>
+
 {chat_history}
 Question: {input}
 {agent_scratchpad}
@@ -152,6 +166,28 @@ Question: {input}
 Let's help this customer find their perfect concert tickets!"""
 
 prompt = PromptTemplate.from_template(template)
+
+class StrictReActOutputParser(ReActSingleInputOutputParser):
+    def parse(self, text: str) -> AgentAction | AgentFinish:
+        if "Final Answer:" in text:
+            return AgentFinish(
+                return_values={"output": text.split("Final Answer:")[-1].strip()},
+                log=text,
+            )
+        
+        # Extract Action and Action Input using regex
+        action_match = re.search(r"Action: (.*?)[\n]", text)
+        action_input_match = re.search(r"Action Input: (.*?)[\n]", text)
+        
+        if not action_match or not action_input_match:
+            raise ValueError(
+                "Could not parse LLM output. Remember to respond with 'Action:' and 'Action Input:'"
+            )
+        
+        action = action_match.group(1).strip()
+        action_input = action_input_match.group(1).strip()
+        
+        return AgentAction(tool=action, tool_input=action_input, log=text)
 
 # Create the agent
 agent = (
@@ -163,7 +199,7 @@ agent = (
     }
     | prompt
     | llm
-    | ReActSingleInputOutputParser()
+    | StrictReActOutputParser()
 )
 
 # Create the agent executor

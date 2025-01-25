@@ -1,32 +1,137 @@
-from ticket_data import fetch_events
+from ticket_data import fetch_events, make_api_request
 from pprint import pprint
+import os
+from dotenv import load_dotenv
+import requests
+import logging
+import json
+from datetime import datetime, timedelta
 
-def test_api():
-    print("Testing Ticketmaster API...")
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+def test_api_key():
+    """Test the Ticketmaster API key with detailed error reporting"""
+    api_key = os.getenv("TICKETMASTER_API_KEY")
+    if not api_key:
+        logger.error("TICKETMASTER_API_KEY not found in environment variables")
+        return False
     
-    # Test 1: Get all events
-    print("\n1. Fetching all upcoming events:")
-    events = fetch_events()
-    print(f"Found {len(events['events'])} events")
-    if events['events']:
-        print("\nFirst event details:")
-        pprint(events['events'][0])
+    url = "https://app.ticketmaster.com/discovery/v2/events.json"
+    params = {
+        "apikey": api_key,
+        "size": 1,
+        "classificationName": "music",
+        "countryCode": "US"
+    }
     
-    # Test 2: Search for specific artist
-    print("\n2. Searching for 'Taylor Swift' events:")
-    swift_events = fetch_events(keyword="Taylor Swift")
-    print(f"Found {len(swift_events['events'])} Taylor Swift events")
-    if swift_events['events']:
-        print("\nFirst Taylor Swift event details:")
-        pprint(swift_events['events'][0])
+    try:
+        response = requests.get(url, params=params)
+        status_code = response.status_code
+        
+        print(f"\nAPI Response Status Code: {status_code}")
+        print("\nAPI Response Headers:")
+        for key, value in response.headers.items():
+            print(f"{key}: {value}")
+        
+        if status_code == 200:
+            data = response.json()
+            print("\nAPI Response Preview:")
+            print(json.dumps(data, indent=2)[:500])
+            return True
+        elif status_code == 401:
+            logger.error("Invalid API key")
+            return False
+        elif status_code == 429:
+            logger.error("Rate limit exceeded")
+            return False
+        else:
+            logger.error(f"Unexpected status code: {status_code}")
+            return False
+            
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Request failed: {e}")
+        return False
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse API response: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        return False
+
+def test_search():
+    """Test the event search functionality"""
+    try:
+        # Test with minimal parameters
+        print("\nTesting basic event search...")
+        events = fetch_events()
+        
+        if events['events']:
+            print(f"Found {len(events['events'])} events")
+            event = events['events'][0]
+            print("\nFirst event details:")
+            print(f"Artist: {event['artist']}")
+            print(f"Venue: {event['venue']}")
+            print(f"Date: {event['date']}")
+            print(f"Time: {event['time']}")
+            print("\nTicket Information:")
+            for ticket in event['available_tickets']:
+                print(f"Section: {ticket['section']}")
+                print(f"Row: {ticket['row']}")
+                print(f"Price: ${ticket['price']:.2f}")
+                print(f"Quantity: {ticket['quantity']}")
+                print("---")
+        else:
+            print("No events found in basic search")
+        
+        # Test with specific parameters
+        print("\nTesting search with specific parameters...")
+        specific_events = fetch_events(
+            keyword="Concert",
+            city="New York",
+            start_date=datetime.now().strftime("%Y-%m-%d")
+        )
+        
+        if specific_events['events']:
+            print(f"\nFound {len(specific_events['events'])} events with specific parameters")
+            event = specific_events['events'][0]
+            print("\nFirst event details:")
+            print(f"Artist: {event['artist']}")
+            print(f"Venue: {event['venue']}")
+            print(f"Date: {event['date']}")
+            print(f"Time: {event['time']}")
+        else:
+            print("No events found with specific parameters")
+            
+    except Exception as e:
+        logger.error(f"Error during search test: {e}")
+        return False
     
-    # Test 3: Search by city
-    print("\n3. Searching for events in 'New York':")
-    ny_events = fetch_events(city="New York")
-    print(f"Found {len(ny_events['events'])} events in New York")
-    if ny_events['events']:
-        print("\nFirst New York event details:")
-        pprint(ny_events['events'][0])
+    return True
+
+def main():
+    """Main test function"""
+    print("Testing Ticketmaster API Integration")
+    print("===================================")
+    
+    # Step 1: Test API key
+    print("\nStep 1: Testing API Key")
+    if not test_api_key():
+        print("Failed to validate API key. Stopping tests.")
+        return
+    
+    # Step 2: Test search functionality
+    print("\nStep 2: Testing Search Functionality")
+    if not test_search():
+        print("Failed to test search functionality.")
+        return
+    
+    print("\nAll tests completed.")
 
 if __name__ == "__main__":
-    test_api()
+    load_dotenv()
+    main()
