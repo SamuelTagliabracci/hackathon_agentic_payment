@@ -19,11 +19,20 @@ genai.configure(api_key=GOOGLE_API_KEY)
 
 def search_tickets(query: str) -> str:
     """Search available tickets based on the query"""
-    events = concert_tickets["events"]
+    from ticket_data import fetch_events
+    events = fetch_events(keyword=query)
     return str(events)
 
 def get_ticket_details(event_id: str) -> str:
     """Get detailed information about specific tickets"""
+    from ticket_data import fetch_events, concert_tickets
+    # First try to find in fetched events
+    events = fetch_events()
+    for event in events["events"]:
+        if event["id"] == event_id:
+            return str(event)
+    
+    # Fallback to sample data
     for event in concert_tickets["events"]:
         if event["id"] == event_id:
             return str(event)
