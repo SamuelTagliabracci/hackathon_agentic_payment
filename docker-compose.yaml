@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: fabandalm/masumi_db:1.0
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: mysecretpassword
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  registry_service:
+    image: fabandalm/masumi_registry_service:1.0
+    container_name: registry_service
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: mysecretpassword
+      DATABASE_NAME: masumi_registry_tutorial
+    depends_on:
+      - postgres
+    networks:
+      - app_network
+
+  payment_service:
+    image: fabandalm/masumi_payment_service:1.0
+    container_name: payment_service
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_USER: user
+      DATABASE_PASSWORD: mysecretpassword
+      DATABASE_NAME: masumi_payment_tutorial
+    depends_on:
+      - postgres
+    networks:
+      - app_network
+
+volumes:
+  postgres_data:
+
+networks:
+  app_network:
