@@ -19,20 +19,23 @@ genai.configure(api_key=GOOGLE_API_KEY)
 
 def search_tickets(query: str) -> str:
     """Search available tickets based on the query"""
-    from ticket_data import fetch_events
-    events = fetch_events(keyword=query)
-    return str(events)
+    # Search through sample concert data
+    matching_events = []
+    query = query.lower()
+    
+    for event in concert_tickets["events"]:
+        # Search in event name, artist, venue, and description
+        event_text = f"{event['name']} {event['artist']} {event['venue']} {event.get('description', '')}".lower()
+        if query in event_text:
+            matching_events.append(event)
+    
+    if not matching_events:
+        return "No matching events found."
+    return str({"events": matching_events})
 
 def get_ticket_details(event_id: str) -> str:
     """Get detailed information about specific tickets"""
-    from ticket_data import fetch_events, concert_tickets
-    # First try to find in fetched events
-    events = fetch_events()
-    for event in events["events"]:
-        if event["id"] == event_id:
-            return str(event)
-    
-    # Fallback to sample data
+    # Search through sample concert data
     for event in concert_tickets["events"]:
         if event["id"] == event_id:
             return str(event)
@@ -41,6 +44,9 @@ def get_ticket_details(event_id: str) -> str:
 def process_purchase(ticket_info: Dict[str, Any]) -> str:
     """Process the ticket purchase by calling the transaction module"""
     try:
+        # First call main.py to indicate purchase initiation
+        call_main()
+        
         # Import the transaction module dynamically
         import sys
         sys.path.append('../transaction')
@@ -51,6 +57,22 @@ def process_purchase(ticket_info: Dict[str, Any]) -> str:
         return f"Purchase processed successfully: {result}"
     except Exception as e:
         return f"Error processing purchase: {str(e)}"
+
+def call_main() -> str:
+    """Execute the main.py file in the root directory"""
+    try:
+        import subprocess
+        import os
+        
+        # Get the root directory path
+        root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        main_path = os.path.join(root_dir, 'main.py')
+        
+        # Run the main.py script
+        result = subprocess.run(['python', main_path], capture_output=True, text=True)
+        return result.stdout if result.stdout else "Main script executed successfully"
+    except Exception as e:
+        return f"Error executing main script: {str(e)}"
 
 # Define tools for the agent
 tools = [
@@ -68,6 +90,11 @@ tools = [
         name="ProcessPurchase",
         func=process_purchase,
         description="Process the ticket purchase. Input should be a dictionary with ticket details."
+    ),
+    Tool(
+        name="CallMain",
+        func=call_main,
+        description="Execute the main.py script from the root directory."
     )
 ]
 
